@@ -146,6 +146,17 @@ export class SessionManager {
   }
 
   /**
+   * Lazily initialize ChromePool when needed (e.g., first multi-profile request).
+   */
+  private ensurePool(): ChromePool {
+    if (!this.chromePool) {
+      this.chromePool = getChromePool({ autoLaunch: getGlobalConfig().autoLaunch });
+      console.error('[SessionManager] ChromePool lazily initialized for multi-profile support');
+    }
+    return this.chromePool;
+  }
+
+  /**
    * Get the CDPClient for a specific worker (may be on a different Chrome instance)
    */
   private getCDPClientForWorker(sessionId: string, workerId: string): CDPClient {
@@ -505,17 +516,43 @@ export class SessionManager {
       ? null
       : await this.cdpClient.createBrowserContext();
 
-    // If pool is enabled and targetUrl provided, acquire a separate Chrome instance
+    // Acquire a Chrome instance from the pool when:
+    // 1. profileDirectory is specified (multi-profile: lazily init pool)
+    // 2. Pool is enabled and targetUrl is provided (origin isolation)
     let workerPort: number | undefined;
     let workerPoolOrigin: string | undefined;
-    if (this.chromePool && options.targetUrl) {
+    let workerProfileDirectory: string | undefined;
+
+    if (options.profileDirectory) {
+      // Multi-profile: lazily enable pool and acquire profile-specific instance
+      try {
+        const pool = this.ensurePool();
+        const origin = options.targetUrl ? new URL(options.targetUrl).origin : undefined;
+        const poolInstance = await pool.acquireInstanceForProfile(options.profileDirectory, origin);
+        workerPort = poolInstance.port;
+        workerPoolOrigin = origin;
+        workerProfileDirectory = options.profileDirectory;
+
+        const workerCdpClient = this.cdpFactory.getOrCreate(workerPort, {
+          autoLaunch: getGlobalConfig().autoLaunch,
+        });
+        if (!workerCdpClient.isConnected()) {
+          await workerCdpClient.connect();
+        }
+
+        console.error(`[SessionManager] Worker ${workerId} assigned to profile "${options.profileDirectory}" on port ${workerPort}`);
+      } catch (err) {
+        console.error(`[SessionManager] Profile acquisition failed for "${options.profileDirectory}":`, err);
+        throw err; // Propagate — caller explicitly requested a profile
+      }
+    } else if (this.chromePool && options.targetUrl) {
+      // Origin isolation: existing pool behavior
       try {
         const origin = new URL(options.targetUrl).origin;
         const poolInstance = await this.chromePool.acquireInstance(origin);
         workerPort = poolInstance.port;
         workerPoolOrigin = origin;
 
-        // Ensure CDPClient for this port is connected
         const workerCdpClient = this.cdpFactory.getOrCreate(workerPort, {
           autoLaunch: getGlobalConfig().autoLaunch,
         });
@@ -540,6 +577,7 @@ export class SessionManager {
       lastActivityAt: Date.now(),
       port: workerPort,
       poolOrigin: workerPoolOrigin,
+      profileDirectory: workerProfileDirectory,
     };
 
     session.workers.set(workerId, worker);
@@ -568,7 +606,7 @@ export class SessionManager {
   /**
    * Get or create a worker
    */
-  async getOrCreateWorker(sessionId: string, workerId?: string): Promise<Worker> {
+  async getOrCreateWorker(sessionId: string, workerId?: string, options?: { profileDirectory?: string; targetUrl?: string }): Promise<Worker> {
     const session = await this.getOrCreateSession(sessionId);
 
     // If no workerId specified, use default worker
@@ -576,7 +614,11 @@ export class SessionManager {
 
     let worker = session.workers.get(targetWorkerId);
     if (!worker) {
-      worker = await this.createWorker(sessionId, { id: targetWorkerId });
+      worker = await this.createWorker(sessionId, {
+        id: targetWorkerId,
+        ...(options?.profileDirectory && { profileDirectory: options.profileDirectory }),
+        ...(options?.targetUrl && { targetUrl: options.targetUrl }),
+      });
     }
 
     return worker;
@@ -691,11 +733,12 @@ export class SessionManager {
   async createTarget(
     sessionId: string,
     url?: string,
-    workerId?: string
+    workerId?: string,
+    profileDirectory?: string
   ): Promise<{ targetId: string; page: Page; workerId: string }> {
     let createTargetTid: ReturnType<typeof setTimeout>;
     return Promise.race([
-      this._createTargetImpl(sessionId, url, workerId).finally(() => clearTimeout(createTargetTid)),
+      this._createTargetImpl(sessionId, url, workerId, profileDirectory).finally(() => clearTimeout(createTargetTid)),
       new Promise<never>((_, reject) => {
         createTargetTid = setTimeout(() => reject(new Error(`createTarget timed out after ${DEFAULT_CREATE_TARGET_TIMEOUT_MS}ms`)), DEFAULT_CREATE_TARGET_TIMEOUT_MS);
       }),
@@ -705,11 +748,15 @@ export class SessionManager {
   private async _createTargetImpl(
     sessionId: string,
     url?: string,
-    workerId?: string
+    workerId?: string,
+    profileDirectory?: string
   ): Promise<{ targetId: string; page: Page; workerId: string }> {
     await this.ensureConnected();
 
-    const worker = await this.getOrCreateWorker(sessionId, workerId);
+    const worker = await this.getOrCreateWorker(sessionId, workerId, {
+      profileDirectory,
+      targetUrl: url,
+    });
 
     // Enforce per-worker tab limit: close oldest tab when limit reached
     if (worker.targets.size >= this.config.maxTargetsPerWorker) {
@@ -863,11 +910,15 @@ export class SessionManager {
     sessionId: string,
     url: string,
     workerId?: string,
-    settleMs: number = 8000
+    settleMs: number = 8000,
+    profileDirectory?: string
   ): Promise<{ targetId: string; page: Page; workerId: string }> {
     await this.ensureConnected();
 
-    const worker = await this.getOrCreateWorker(sessionId, workerId);
+    const worker = await this.getOrCreateWorker(sessionId, workerId, {
+      profileDirectory,
+      targetUrl: url,
+    });
 
     // Enforce per-worker tab limit: close oldest tab when limit reached
     if (worker.targets.size >= this.config.maxTargetsPerWorker) {

@@ -18,6 +18,7 @@ export interface PooledInstance {
   origins: Set<string>;  // origins currently using this instance
   tabCount: number;
   isPreExisting: boolean; // was it already running when we found it?
+  profileDirectory?: string; // Chrome profile directory (e.g., "Profile 1", "Default")
 }
 
 const DEFAULT_POOL_CONFIG: ChromePoolConfig = {
@@ -119,6 +120,46 @@ export class ChromePool {
   }
 
   /**
+   * Acquire a Chrome instance running a specific profile.
+   * Returns an existing instance if one is already running this profile,
+   * otherwise launches a new Chrome process with --profile-directory.
+   */
+  async acquireInstanceForProfile(profileDirectory: string, origin?: string): Promise<PooledInstance> {
+    // 1. Find an existing instance already running this profile
+    for (const [, instance] of this.instances) {
+      if (instance.profileDirectory === profileDirectory) {
+        if (origin) {
+          instance.origins.add(origin);
+        }
+        instance.tabCount++;
+        console.error(
+          `[ChromePool] Reusing existing instance on port ${instance.port} for profile "${profileDirectory}"`
+        );
+        return instance;
+      }
+    }
+
+    // 2. No instance with this profile — launch a new one
+    if (this.instances.size >= this.config.maxInstances) {
+      throw new Error(
+        `[ChromePool] Cannot launch Chrome for profile "${profileDirectory}": ` +
+        `pool is at max capacity (${this.config.maxInstances} instances). ` +
+        `Close unused profiles first.`
+      );
+    }
+
+    const newInstance = await this.launchNewInstance(profileDirectory);
+    if (origin) {
+      newInstance.origins.add(origin);
+    }
+    newInstance.tabCount++;
+    console.error(
+      `[ChromePool] Launched new instance on port ${newInstance.port} for profile "${profileDirectory}"`
+    );
+    return newInstance;
+  }
+
+  /**
    * Mark that an origin is no longer using a port.
    */
   releaseInstance(port: number, origin: string): void {
@@ -169,13 +210,14 @@ export class ChromePool {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private async launchNewInstance(): Promise<PooledInstance> {
+  private async launchNewInstance(profileDirectory?: string): Promise<PooledInstance> {
     const port = this.nextAvailablePort();
     const launcher = new ChromeLauncher(port);
 
     const launchOptions: LaunchOptions = {
       port,
       autoLaunch: this.config.autoLaunch,
+      ...(profileDirectory && { profileDirectory }),
     };
 
     let isPreExisting = false;
@@ -199,6 +241,7 @@ export class ChromePool {
       origins: new Set(),
       tabCount: 0,
       isPreExisting,
+      profileDirectory,
     };
 
     this.instances.set(port, pooled);
