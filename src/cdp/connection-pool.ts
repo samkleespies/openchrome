@@ -4,7 +4,6 @@
 
 import { Page } from 'puppeteer-core';
 import { CDPClient, getCDPClient } from './client';
-import { DEFAULT_VIEWPORT } from '../config/defaults';
 
 export interface PoolConfig {
   /** Minimum number of pre-allocated pages to keep ready (default: 0) */
@@ -341,8 +340,8 @@ export class CDPConnectionPool {
     this.availablePages.push(pooledPage);
   }
 
-  // Default viewport for consistent debugging experience
-  static readonly DEFAULT_VIEWPORT = DEFAULT_VIEWPORT;
+  // No viewport override — let page follow actual window size
+  static readonly DEFAULT_VIEWPORT = null;
 
   /**
    * Create a new page with default viewport.
@@ -355,10 +354,7 @@ export class CDPConnectionPool {
 
     // Dialog auto-dismiss is handled by CDPClient.createPage() — no duplicate handler needed here.
 
-    // Ensure viewport is set (cdpClient.createPage already sets it, but double-check)
-    if (!page.viewport()) {
-      await page.setViewport(CDPConnectionPool.DEFAULT_VIEWPORT);
-    }
+    // Don't set viewport — let page follow actual window size (responsive to resize).
     this.totalPagesCreated++;
     return page;
   }

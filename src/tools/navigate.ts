@@ -204,6 +204,57 @@ const handler: ToolHandler = async (
         }
       }
 
+      // Try to reuse an existing about:blank or new tab page instead of creating a new tab
+      // Only reuse unclaimed pages (not registered to any session) to avoid conflicts
+      try {
+        const cdpClient = sessionManager.getCDPClient();
+        const existingPages = await cdpClient.getPages();
+        const blankPage = existingPages.find((p: any) => {
+          const pageUrl = p.url();
+          if (pageUrl !== 'about:blank' && pageUrl !== 'chrome://newtab/' && pageUrl !== 'chrome://new-tab-page/') return false;
+          const tid = p.target()?._targetId;
+          if (tid && sessionManager.getTargetOwner(tid)) return false;
+          return true;
+        });
+        if (blankPage) {
+          // Close all OTHER blank/new-tab pages to clean up session-restore windows
+          const otherBlanks = existingPages.filter((p: any) => {
+            if (p === blankPage) return false;
+            const u = p.url();
+            return u === 'about:blank' || u === 'chrome://newtab/' || u === 'chrome://new-tab-page/';
+          });
+          for (const ob of otherBlanks) {
+            try { await ob.close(); } catch (_) {}
+          }
+          await blankPage.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          const target = blankPage.target();
+          const targetId = (target as any)._targetId || (target as any)._targetInfo?.targetId || '';
+          const assignedWorkerId = workerId || 'default';
+          try {
+            await sessionManager.getOrCreateSession(sessionId);
+            sessionManager.registerExistingTarget(sessionId, assignedWorkerId, targetId);
+          } catch (regErr) {
+            console.error('[navigate] Could not register reused tab:', regErr);
+          }
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                action: 'navigate',
+                url: blankPage.url(),
+                title: await safeTitle(blankPage),
+                tabId: targetId,
+                workerId: assignedWorkerId,
+                created: false,
+                reused: true,
+              }),
+            }],
+          };
+        }
+      } catch (reuseErr) {
+        console.error('[navigate] Could not reuse blank tab:', reuseErr);
+      }
+
       // Create new tab with URL directly (in specified worker or default)
       // Use stealth mode (CDP-free load) when requested, e.g. for Cloudflare Turnstile pages
       const { targetId, page, workerId: assignedWorkerId } = stealth

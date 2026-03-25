@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as http from 'http';
 import { getGlobalConfig } from '../config/global';
 import { writeChromePid, removeChromePid } from '../utils/pid-manager';
-import { DEFAULT_VIEWPORT, DEFAULT_CHROME_LAUNCH_TIMEOUT_MS, DEFAULT_RESTORE_LAST_SESSION } from '../config/defaults';
+import { DEFAULT_CHROME_LAUNCH_TIMEOUT_MS, DEFAULT_RESTORE_LAST_SESSION } from '../config/defaults';
 import { ProfileManager } from './profile-manager';
 import type { ProfileType } from './profile-manager';
 export type { ProfileType } from './profile-manager';
@@ -422,6 +422,25 @@ export class ChromeLauncher {
 
     fs.mkdirSync(userDataDir, { recursive: true });
 
+    // Set default zoom to 80% via Chrome Preferences (before Chrome starts)
+    const defaultProfileDir = path.join(userDataDir, 'Default');
+    fs.mkdirSync(defaultProfileDir, { recursive: true });
+    const prefsPath = path.join(defaultProfileDir, 'Preferences');
+    try {
+      let prefs: any = {};
+      if (fs.existsSync(prefsPath)) {
+        prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+      }
+      if (!prefs.partition) prefs.partition = {};
+      if (!prefs.partition.default_zoom_level) prefs.partition.default_zoom_level = {};
+      prefs.partition.default_zoom_level['x'] = -1.2237754316890903;
+      if (!prefs.profile) prefs.profile = {};
+      prefs.profile.default_zoom_level = -1.2237754316890903;
+      fs.writeFileSync(prefsPath, JSON.stringify(prefs));
+    } catch (err) {
+      console.error('[ChromeLauncher] Could not set default zoom:', err);
+    }
+
     const args = [
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${userDataDir}`,
@@ -446,8 +465,8 @@ export class ChromeLauncher {
       restoreSession ? '--restore-last-session' : '--no-restore-last-session',
       // IMPORTANT: Start maximized for proper debugging experience
       '--start-maximized',
-      // Fallback window size if maximize doesn't work
-      `--window-size=${DEFAULT_VIEWPORT.width},${DEFAULT_VIEWPORT.height}`,
+      // Fallback window size if maximize doesn't work (1280x800 fits Mac screens better)
+      '--window-size=1280,800',
       // Memory-saving flags (applies to all profile types)
       '--renderer-process-limit=16',
       '--js-flags=--max-old-space-size=1024',
@@ -458,6 +477,7 @@ export class ChromeLauncher {
       '--disable-crash-reporter',
       '--disable-session-crashed-bubble',
       '--hide-crash-restore-bubble',
+      '--disable-features=InfiniteSessionRestore',
     );
 
     // Prevent Blink from setting navigator.webdriver = true when CDP is connected.

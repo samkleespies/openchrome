@@ -162,6 +162,40 @@ claude mcp add openchrome -- npx -y openchrome-mcp@latest serve --auto-launch
 
 ---
 
+## Fork Changes
+
+This fork includes several fixes and improvements for macOS, particularly for Retina/HiDPI displays and quality-of-life improvements:
+
+### Display & Viewport Fixes
+- **No viewport emulation** — Pages follow the actual window size and respond to manual resizing, instead of being locked to a hardcoded 1920x1080 viewport
+- **Native Retina rendering** — Removed `--force-device-scale-factor=1` so Chrome renders at native 2x resolution on HiDPI displays
+- **Window auto-maximize** — Uses CDP `Browser.setWindowBounds` to maximize the window on connect (more reliable than `--start-maximized` on macOS)
+- **80% default zoom** — Set via Chrome Preferences file for comfortable viewing on high-res screens
+- **Mac-safe window size** — Fallback `--window-size` changed from 1920x1080 to 1280x800 to fit common Mac screens
+
+### Session & Tab Management
+- **Persistent profile** — Uses `~/.claude/chrome-profile/` instead of a timestamped temp directory, so logins and cookies survive across restarts
+- **Blank tab reuse** — Navigate reuses existing `about:blank` / `chrome://newtab/` pages instead of always creating new tabs, eliminating orphan blank tabs
+- **Session-safe reuse** — Only unclaimed tabs are reused (checked against `targetToWorker` registry), preventing conflicts between parallel sessions
+- **Auto-cleanup** — Extra blank/new-tab pages from session restore are automatically closed on first navigate
+
+### Chrome 136+ Compatibility
+- **Skips default profile** — Chrome 136+ silently ignores `--remote-debugging-port` on the default user data directory; this fork always uses a separate persistent profile where the debug port works
+- **Session restore suppression** — Added `--hide-crash-restore-bubble` and `--disable-features=InfiniteSessionRestore` to prevent extra windows when using persistent profiles
+
+### Installation (from fork)
+
+```bash
+# Clone and build
+git clone https://github.com/samkleespies/openchrome.git
+cd openchrome && npm install && npm run build
+
+# Add to Claude Code (use local path)
+claude mcp add openchrome -- node /path/to/openchrome/dist/index.js serve --auto-launch
+```
+
+---
+
 ## Examples
 
 **Parallel monitoring:**

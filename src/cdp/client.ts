@@ -9,7 +9,6 @@ import { smartGoto } from '../utils/smart-goto';
 import { getTargetId } from '../utils/puppeteer-helpers';
 import { getRefIdManager } from '../utils/ref-id-manager';
 import {
-  DEFAULT_VIEWPORT,
   DEFAULT_NAVIGATION_TIMEOUT_MS,
   DEFAULT_PROTOCOL_TIMEOUT_MS,
   DEFAULT_COOKIE_SCAN_TIMEOUT_MS,
@@ -17,7 +16,6 @@ import {
   DEFAULT_COOKIE_SCAN_MAX_CANDIDATES,
   DEFAULT_COOKIE_COPY_TIMEOUT_MS,
   DEFAULT_NEW_PAGE_TIMEOUT_MS,
-  DEFAULT_PAGE_CONFIG_TIMEOUT_MS,
   DEFAULT_PUPPETEER_CONNECT_TIMEOUT_MS,
   DEFAULT_HEARTBEAT_PING_TIMEOUT_MS,
   DEFAULT_CONNECT_VERIFY_STALENESS_MS,
@@ -576,6 +574,22 @@ export class CDPClient {
       }
     }
 
+    // Maximize the browser window via CDP
+    try {
+      const pages = await this.browser!.pages();
+      if (pages.length > 0) {
+        const cdpSession = await pages[0].createCDPSession();
+        const { windowId } = await cdpSession.send('Browser.getWindowForTarget') as { windowId: number };
+        await cdpSession.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { windowState: 'maximized' },
+        });
+        await cdpSession.detach();
+      }
+    } catch (err) {
+      console.error('[CDPClient] Could not maximize window:', err);
+    }
+
     // Set up disconnect handler
     // Non-null assertion: the retry loop above either sets this.browser and breaks, or throws.
     this.browser!.on('disconnected', () => {
@@ -813,8 +827,8 @@ export class CDPClient {
     return this.browser;
   }
 
-  // Default viewport for consistent debugging experience
-  static readonly DEFAULT_VIEWPORT = DEFAULT_VIEWPORT;
+  // No viewport override — let page follow actual window size
+  static readonly DEFAULT_VIEWPORT = null;
 
   /**
    * Create a new isolated browser context for session isolation
@@ -1221,11 +1235,8 @@ export class CDPClient {
 
     this.configurePageDefenses(page);
 
-    // Set default viewport for consistent debugging experience (non-critical; swallow timeout)
-    await Promise.race([
-      page.setViewport(CDPClient.DEFAULT_VIEWPORT),
-      new Promise<void>((resolve) => setTimeout(resolve, DEFAULT_PAGE_CONFIG_TIMEOUT_MS)),
-    ]);
+    // Don't set viewport — let page follow actual window size (responsive to resize).
+    // defaultViewport: null in puppeteer.connect() makes this work.
 
     if (url) {
       try {
