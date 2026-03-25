@@ -487,6 +487,7 @@ export class ChromeLauncher {
     // Skipped for chrome-headless-shell which may not support this flag.
     if (!usingHeadlessShell) {
       args.push('--disable-blink-features=AutomationControlled');
+      args.push('--disable-infobars');
     }
 
     // Only disable background features for non-real profiles.
