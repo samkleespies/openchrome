@@ -590,6 +590,21 @@ export class CDPClient {
       console.error('[CDPClient] Could not maximize window:', err);
     }
 
+    // Patch navigator.webdriver on all new pages (replaces --disable-blink-features=AutomationControlled
+    // which triggers a yellow "unsupported command-line flag" warning bar)
+    this.browser!.on('targetcreated', async (target: any) => {
+      if (target.type() === 'page') {
+        try {
+          const page = await target.page();
+          if (page) {
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            });
+          }
+        } catch (_) {}
+      }
+    });
+
     // Set up disconnect handler
     // Non-null assertion: the retry loop above either sets this.browser and breaks, or throws.
     this.browser!.on('disconnected', () => {

@@ -480,15 +480,9 @@ export class ChromeLauncher {
       '--disable-features=InfiniteSessionRestore',
     );
 
-    // Prevent Blink from setting navigator.webdriver = true when CDP is connected.
-    // Without this, anti-automation systems (e.g., Cloudflare Turnstile) detect the
-    // browser as automated and refuse to function — even for manual human interaction.
-    // This is an official Chrome flag, not a stealth hack. (#247)
-    // Skipped for chrome-headless-shell which may not support this flag.
-    if (!usingHeadlessShell) {
-      args.push('--disable-blink-features=AutomationControlled');
-      args.push('--disable-infobars');
-    }
+    // navigator.webdriver is patched via JS injection in client.ts connectInternal()
+    // instead of --disable-blink-features=AutomationControlled, which triggers a
+    // yellow "unsupported command-line flag" warning bar in Chrome 136+.
 
     // Only disable background features for non-real profiles.
     // Several flags previously included here were removed as known bot-detection signals
