@@ -166,11 +166,10 @@ export function listBackups(
   }
 
   const basename = path.basename(originalFilename);
-  const pattern = new RegExp(`^${basename.replace(/\./g, '\\.')}\\..*\\.bak$`);
 
   return fs
     .readdirSync(targetDir)
-    .filter((file) => pattern.test(file))
+    .filter((file) => file.startsWith(`${basename}.`) && file.endsWith('.bak'))
     .sort()
     .reverse(); // Most recent first
 }
