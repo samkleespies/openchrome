@@ -24,7 +24,7 @@ export class FixtureServer {
 
         // Check custom routes first
         const customHandler = this.customRoutes.get(url);
-        if (customHandler) {
+        if (typeof customHandler === 'function') {
           customHandler(req, res);
           return;
         }

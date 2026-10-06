@@ -123,7 +123,13 @@ function startFixtureServer(port: number): Promise<http.Server> {
   return new Promise((resolve) => {
     const fixturesDir = path.join(process.cwd(), 'tests', 'e2e', 'fixtures');
     const server = http.createServer((req, res) => {
-      const filePath = path.join(fixturesDir, req.url === '/' ? 'compression-test.html' : req.url!);
+      const requestPath = new URL(req.url || '/', 'http://localhost').pathname;
+      const filePath = path.resolve(fixturesDir, '.' + (requestPath === '/' ? '/compression-test.html' : requestPath));
+      if (!filePath.startsWith(fixturesDir + path.sep)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+      }
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
         res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -133,7 +139,7 @@ function startFixtureServer(port: number): Promise<http.Server> {
         res.end('Not found');
       }
     });
-    server.listen(port, () => resolve(server));
+    server.listen(port, '127.0.0.1', () => resolve(server));
   });
 }
 

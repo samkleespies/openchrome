@@ -19,6 +19,7 @@ import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { randomBytes } from 'crypto';
 import { spawn, ChildProcess } from 'child_process';
 import { checkForUpdates } from './update-check';
 
@@ -935,7 +936,7 @@ function getSessionsDir(): string {
  */
 function generateSessionId(): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
+  const random = randomBytes(16).toString('hex');
   return `${timestamp}-${random}`;
 }
 

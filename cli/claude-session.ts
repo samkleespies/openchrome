@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { randomBytes } from 'crypto';
 import { spawn } from 'child_process';
 
 const BASE_DIR = path.join(os.homedir(), '.openchrome');
@@ -30,7 +31,7 @@ interface SessionMetadata {
  */
 function generateSessionId(): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
+  const random = randomBytes(16).toString('hex');
   return `${timestamp}-${random}`;
 }
 

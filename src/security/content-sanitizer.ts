@@ -76,7 +76,12 @@ export function sanitizeContent(text: string): SanitizeResult {
   // 2. Remove HTML comments (may contain hidden instructions)
   const commentMatches = sanitized.match(HTML_COMMENTS) || [];
   if (commentMatches.length > 0) {
-    sanitized = sanitized.replace(HTML_COMMENTS, '');
+    // Repeat because removing a comment can join fragments into a new comment.
+    let previous;
+    do {
+      previous = sanitized;
+      sanitized = sanitized.replace(HTML_COMMENTS, '');
+    } while (sanitized !== previous);
     contentRemoved = true;
     notes.push(`${commentMatches.length} HTML comments removed`);
   }

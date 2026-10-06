@@ -5,6 +5,11 @@
 
 import { sanitizeContent } from '../../src/security/content-sanitizer';
 
+test('removes comments formed by joining delimiter fragments', () => {
+  const result = sanitizeContent('visible <!<!--hidden-->--secret--> text');
+  expect(result.text).toBe('visible  text');
+});
+
 describe('ContentSanitizer', () => {
   describe('zero-width character removal', () => {
     test('should remove zero-width spaces', () => {
