@@ -17,6 +17,11 @@ jest.unmock('../../src/chrome/launcher');
 
 import { ChromeLauncher } from '../../src/chrome/launcher';
 
+jest.mock('os', () => ({
+  ...jest.requireActual('os'),
+  platform: () => 'darwin',
+}));
+
 jest.mock('child_process', () => {
   const actual = jest.requireActual('child_process');
   return {
