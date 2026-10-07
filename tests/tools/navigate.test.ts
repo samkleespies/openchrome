@@ -69,6 +69,21 @@ describe('NavigateTool', () => {
     jest.clearAllMocks();
   });
 
+  test('does not reuse a primary-browser blank tab for an explicit profile', async () => {
+    const blank = createMockPage({ url: 'about:blank' });
+    const getPages = jest.fn().mockResolvedValue([blank]);
+    mockSessionManager.getCDPClient.mockReturnValue({ getPages } as any);
+    mockSessionManager.createTarget.mockRejectedValue(new Error('Profile NonExistent not found'));
+    const handler = await getNavigateHandler();
+    const result = await handler(testSessionId, {
+      url: 'https://example.com', profileDirectory: 'NonExistent',
+    });
+    expect(isErrorResult(result as any)).toBe(true);
+    expect(getResultText(result as any)).toContain('Profile NonExistent not found');
+    expect(getPages).not.toHaveBeenCalled();
+    expect(blank.goto).not.toHaveBeenCalled();
+  });
+
   describe('URL Handling', () => {
     test('adds https:// to URL without protocol', async () => {
       const handler = await getNavigateHandler();

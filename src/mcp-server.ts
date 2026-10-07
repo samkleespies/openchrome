@@ -66,7 +66,7 @@ export function isConnectionError(error: unknown): boolean {
 
 /** Lifecycle tools that must work even when the CDP connection is broken (e.g., after
  *  sleep/wake). Skip session initialization so oc_stop can always reach its handler. */
-const SKIP_SESSION_INIT_TOOLS = new Set(['oc_stop', 'oc_profile_status', 'oc_session_snapshot', 'oc_session_resume', 'oc_journal']);
+const SKIP_SESSION_INIT_TOOLS = new Set(['oc_stop', 'oc_connection_health', 'oc_profile_status', 'oc_session_snapshot', 'oc_session_resume', 'oc_journal']);
 
 /**
  * Clients known to support notifications/tools/list_changed.
@@ -596,7 +596,7 @@ export class MCPServer {
     // Adaptive heartbeat: switch to heavy mode during tool execution
     try {
       const cdpClient = getCDPClient();
-      if (cdpClient.setHeartbeatMode) {
+      if (toolName !== 'oc_connection_health' && cdpClient.setHeartbeatMode) {
         cdpClient.setHeartbeatMode('heavy');
       }
       if (this.heartbeatIdleTimer) {
@@ -715,7 +715,7 @@ export class MCPServer {
       // Transition from heavy back to active after tool completes
       try {
         const cdpClient = getCDPClient();
-        if (cdpClient.setHeartbeatMode) {
+        if (toolName !== 'oc_connection_health' && cdpClient.setHeartbeatMode) {
           cdpClient.setHeartbeatMode('active');
         }
       } catch {
@@ -855,7 +855,7 @@ export class MCPServer {
       // Transition from heavy back to active after tool completes
       try {
         const cdpClient = getCDPClient();
-        if (cdpClient.setHeartbeatMode) {
+        if (toolName !== 'oc_connection_health' && cdpClient.setHeartbeatMode) {
           cdpClient.setHeartbeatMode('active');
         }
       } catch {

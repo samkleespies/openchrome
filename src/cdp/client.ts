@@ -691,6 +691,9 @@ export class CDPClient {
    * and heartbeat timers from the first connection).
    */
   async connect(): Promise<void> {
+    if (this.reconnecting) {
+      throw new Error('Chrome reconnection is in progress; retry when the connection is restored.');
+    }
     if (this.browser && this.browser.isConnected()) {
       // Skip active probe if recently verified by heartbeat (avoids per-call overhead)
       if (Date.now() - this.lastVerifiedAt < DEFAULT_CONNECT_VERIFY_STALENESS_MS) {

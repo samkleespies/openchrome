@@ -21,6 +21,14 @@ function createClient(opts: Record<string, unknown> = {}): CDPClient {
 }
 
 describe('CDPClient — Adaptive Heartbeat', () => {
+  test('a foreground call fails promptly while automatic reconnection owns the connection', async () => {
+    const client = createClient();
+    (client as any).reconnecting = true;
+    const connect = jest.spyOn(client as any, 'connectInternal');
+    await expect(client.connect()).rejects.toThrow('reconnection is in progress');
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   test('default heartbeat mode is active', () => {
     const client = createClient();
     expect(client.getHeartbeatMode()).toBe('active');

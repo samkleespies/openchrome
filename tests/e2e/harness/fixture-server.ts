@@ -35,6 +35,7 @@ export class FixtureServer {
 
       this.server.on('error', reject);
       this.server.listen(this.port, () => {
+        this.port = (this.server!.address() as import('net').AddressInfo).port;
         console.error(`[fixture-server] Listening on http://localhost:${this.port}`);
         resolve(this.port);
       });
@@ -48,6 +49,9 @@ export class FixtureServer {
           this.server = null;
           resolve();
         });
+        // Chrome can leave speculative sockets open without sending a request.
+        // These test-only connections must not keep afterAll waiting forever.
+        this.server.closeAllConnections();
       } else {
         resolve();
       }
