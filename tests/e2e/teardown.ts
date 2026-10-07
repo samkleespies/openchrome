@@ -34,6 +34,7 @@ export default async function globalTeardown(): Promise<void> {
   if (server) {
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
+      server.closeAllConnections();
     });
     console.error('[e2e-teardown] Fixture server stopped');
   }

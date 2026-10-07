@@ -11,16 +11,27 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { MCPClient } from '../harness/mcp-client';
+import { MCPClient, MCPToolResult } from '../harness/mcp-client';
 import { ChromeController } from '../harness/chrome-controller';
 import { sleep } from '../harness/time-scale';
 
-const CHROME_PORT = 9222;
+const CHROME_PORT = Number(process.env.CHROME_PORT || 9222);
 
 function getFixturePort(): number {
   const stateFile = path.join(process.cwd(), '.e2e-state.json');
   const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
   return state.port;
+}
+
+function getConnectionState(result: MCPToolResult): { connectionState: string; reconnecting: boolean } {
+  for (const item of result.content) {
+    if (!item.text) continue;
+    try {
+      const value = JSON.parse(item.text);
+      if (typeof value.connectionState === 'string') return value;
+    } catch { /* warnings and hints are separate text blocks */ }
+  }
+  throw new Error('Connection health response has no state');
 }
 
 /**
@@ -98,19 +109,18 @@ describe('E2E: Network Disruption Recovery', () => {
     // This is more reliable than a fixed sleep — confirms heartbeat has actually fired.
     console.error('[network-disruption] Step 3b: Polling connection health until disconnection detected');
     let disrupted = false;
-    for (let i = 0; i < 20; i++) { // max 40s (20 × 2s)
+    // Two 15-second probes plus their heartbeat intervals can take over 40s.
+    for (let i = 0; i < 30; i++) { // max 60s (30 × 2s)
       try {
         const health = await mcp.callTool('oc_connection_health', {}, 5_000);
-        if (health.text.includes('reconnecting') || health.text.includes('disconnected')) {
+        const state = getConnectionState(health);
+        if (state.connectionState === 'reconnecting' || state.connectionState === 'disconnected') {
           console.error(`[network-disruption] Step 3b OK: Disruption detected after ${(i + 1) * 2}s`);
           disrupted = true;
           break;
         }
-      } catch {
-        // oc_connection_health itself might error if server is in bad state
-        disrupted = true;
-        console.error(`[network-disruption] Step 3b OK: Tool call errored (disrupted) after ${(i + 1) * 2}s`);
-        break;
+      } catch (err) {
+        console.error(`[network-disruption] Health poll failed: ${(err as Error).message}`);
       }
       await sleep(2_000);
     }
@@ -121,10 +131,8 @@ describe('E2E: Network Disruption Recovery', () => {
     const callStart = Date.now();
     let errorOccurred = false;
     try {
-      await mcp.callTool('navigate', { url: `http://localhost:${port}/site-b` }, 25_000);
-      // If navigate succeeds, it means the server launched a new Chrome or the call
-      // was served from cache. Check if it was an error response.
-      console.error('[network-disruption] Step 4: navigate returned (checking for isError)');
+      const result = await mcp.callTool('navigate', { url: `http://localhost:${port}/site-b` }, 25_000);
+      errorOccurred = result.raw.isError === true;
     } catch (err) {
       errorOccurred = true;
       const elapsed = Date.now() - callStart;
@@ -133,6 +141,7 @@ describe('E2E: Network Disruption Recovery', () => {
       expect(elapsed).toBeLessThan(20_000);
     }
     expect(errorOccurred).toBe(true);
+    expect(Date.now() - callStart).toBeLessThan(20_000);
     console.error('[network-disruption] Step 4 OK: Disruption correctly produced a bounded error');
 
     // Step 5: Unfreeze Chrome and wait for auto-reconnect
@@ -146,7 +155,8 @@ describe('E2E: Network Disruption Recovery', () => {
     for (let i = 0; i < 20; i++) { // max 40s
       try {
         const health = await mcp.callTool('oc_connection_health', {}, 5_000);
-        if (health.text.includes('"connected"') && !health.text.includes('reconnecting')) {
+        const state = getConnectionState(health);
+        if (state.connectionState === 'connected' && !state.reconnecting) {
           console.error(`[network-disruption] Step 5b OK: Reconnected after ${(i + 1) * 2}s`);
           reconnected = true;
           break;
